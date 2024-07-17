@@ -1,0 +1,7 @@
+*.log
+*.pot
+*.pyc
+__pycache__
+credentials.py
+media
+.cache
