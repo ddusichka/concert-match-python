@@ -5,6 +5,8 @@ class Concert(models.Model):
     event_id = models.CharField(max_length=255, null=False, blank=False, unique=True)
     url = models.URLField(max_length=255, blank=True)
     image_url = models.URLField(max_length=255, null=False, blank=False)
+    attraction_id = models.CharField(max_length=255, null=False, blank=False)
+    attraction_name = models.CharField(max_length=255, null=False, blank=False)
     local_date = models.DateField(null=False, blank=False)
     local_time = models.TimeField(null=True, blank=True)
     genre = models.CharField(max_length=255, blank=True)

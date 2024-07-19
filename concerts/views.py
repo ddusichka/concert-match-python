@@ -8,8 +8,7 @@ from .models import Concert  # Adjust the import path as necessary
 import credentials
 
 """
-Hit events endpoint and collect attraction IDs? Then look up attraction IDs?
-
+Hit events endpoint and collect attraction IDs and artist names
 """
 
 def get_concerts(request):
@@ -18,7 +17,7 @@ def get_concerts(request):
     country_code = "US"
     market_id = 11
     classification_name = "music"
-    size = 15
+    size = 200
 
     # Construct the URL and parameters
     params = {
@@ -32,9 +31,7 @@ def get_concerts(request):
 
     # Make the API call
     response = requests.get(url, params=params)
-    print(response)
-    return JsonResponse(response.json(), safe=False)
-    if True or response.status_code == 200:
+    if response.status_code == 200:
         concerts_data = response.json()
 
         # Process the 'events' array inside '_embedded'
@@ -60,17 +57,19 @@ def get_concerts(request):
                 defaults={
                     'name': event['name'],
                     'image_url': event['images'][0]['url'],
+                    'attraction_id': event['_embedded']['attractions'][0]['id'],
+                    'attraction_name': event['_embedded']['attractions'][0]['name'],
                     'local_date': event['dates']['start']['localDate'],
+                    'local_time': event.get('dates', {}).get('start', {}).get('localTime', None),                    
                     'genre': event['classifications'][0]['genre']['name'],
                     'subgenre': event['classifications'][0]['subGenre']['name'],
+                    'min_price': event.get('priceRanges', [{}])[0].get('min', None),
+                    'max_price': event.get('priceRanges', [{}])[0].get('max', None),
                     'venue': event['_embedded']['venues'][0]['name'],
                     'city': event['_embedded']['venues'][0]['city']['name'],
                     'state': event['_embedded']['venues'][0]['state']['stateCode'],
                 }
             )
-
-        # Optionally, return all Concert instances
-        print(Concert.objects.first())
     
         concerts = Concert.objects.all()
         concerts_json = serialize('json', concerts)
