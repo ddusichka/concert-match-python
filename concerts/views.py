@@ -1,103 +1,82 @@
-from django.shortcuts import render, redirect
-from rest_framework.decorators import api_view
-from django.template.response import TemplateResponse
-from spotipy.oauth2 import SpotifyOAuth, SpotifyClientCredentials
-from django.http import HttpResponse, JsonResponse, HttpResponseRedirect
+import requests
+from django.db.models import Q
+from django.http import JsonResponse
+import json
+from django.core.serializers import serialize
 
+from .models import Concert  # Adjust the import path as necessary
 import credentials
 
-from .models import Track, User  # Import the Track model
-from django.shortcuts import render
-import spotipy
+"""
+Hit events endpoint and collect attraction IDs? Then look up attraction IDs?
 
+"""
 
-def login(request):
-    # Create a SpotifyOAuth object
-    sp_oauth = SpotifyOAuth(client_id=credentials.client_ID, client_secret=credentials.client_SECRET, redirect_uri='http://localhost:8000/concerts/callback', scope = credentials.scope)
+def get_concerts(request):
+    # Define API parameters
+    api_key = credentials.TICKETMASTER_API_KEY
+    country_code = "US"
+    market_id = 11
+    classification_name = "music"
+    size = 15
 
-    # Print the sp_oauth object to the console
-    print("\n\nSP_OAuth Object:" ,sp_oauth, "\n\n")
+    # Construct the URL and parameters
+    params = {
+        'countryCode': country_code,
+        'apikey': api_key,
+        'marketId': market_id,
+        'classificationName': classification_name,
+        'size': size,
+    }
+    url = "https://app.ticketmaster.com/discovery/v2/events.json"
 
-    # Redirect the user to the Spotify login page
-    # Get the authorization URL
-    url = sp_oauth.get_authorize_url()
-    # Print the authorization url to the console
-    print(url)
+    # Make the API call
+    response = requests.get(url, params=params)
+    print(response)
+    return JsonResponse(response.json(), safe=False)
+    if True or response.status_code == 200:
+        concerts_data = response.json()
 
-    # Redirect the user to the Spotify login page
-    return HttpResponseRedirect(url)
+        # Process the 'events' array inside '_embedded'
+        events_array = concerts_data['_embedded']['events']
 
-def callback(request):
-    # Create a SpotifyOAuth object
-    sp_oauth = SpotifyOAuth(client_id=credentials.client_ID, client_secret=credentials.client_SECRET, redirect_uri='http://localhost:8000/concerts/callback', scope=credentials.scope)
+        # Sort and filter events as per the original JavaScript logic
+        # Note: Python's sorting is stable, so we can sort by name and then by length if needed directly
+        sorted_events = sorted(events_array, key=lambda x: (x['name'].lower(), len(x['name'])))
 
-    # Get the authorization code from the query parameters
-    code = request.GET.get("code")
+        # Assuming the uniqueness check is based on the first attraction's ID
+        unique_events = []
+        seen_ids = set()
+        for event in sorted_events:
+            attraction_id = event['_embedded']['attractions'][0]['id']
+            if attraction_id not in seen_ids:
+                unique_events.append(event)
+                seen_ids.add(attraction_id)
 
-    # Request an access token using the authorization code
-    token_info = sp_oauth.get_access_token(code)
-
-    # Extract the access token
-    access_token = token_info["access_token"]
-
-    # Store the access token in a secure way (e.g. in a session or database)
-    request.session["access_token"] = access_token
-
-    # Redirect the user to the top tracks page
-    return HttpResponseRedirect("/concerts/top-tracks/")
-    
-
-@api_view(['GET'])
-def get_top_tracks(request):
-    if request.method == 'GET':
-         # Get the access token from the session and create a Spotipy client
-        access_token = request.session.get("access_token")
-        sp = spotipy.Spotify(auth=access_token)
-
-        # Make a request to the Spotify API to retrieve the user's profile information
-        spotifyUser = sp.me()
-        if spotifyUser is not None:
-            user, created = User.objects.get_or_create(
-                username=spotifyUser["id"], 
-                display_name=spotifyUser["display_name"] 
+        # Update or create concert instances
+        for event in unique_events:
+            Concert.objects.update_or_create(
+                event_id=event['id'],
+                defaults={
+                    'name': event['name'],
+                    'image_url': event['images'][0]['url'],
+                    'local_date': event['dates']['start']['localDate'],
+                    'genre': event['classifications'][0]['genre']['name'],
+                    'subgenre': event['classifications'][0]['subGenre']['name'],
+                    'venue': event['_embedded']['venues'][0]['name'],
+                    'city': event['_embedded']['venues'][0]['city']['name'],
+                    'state': event['_embedded']['venues'][0]['state']['stateCode'],
+                }
             )
-        else:
-            # The access token is invalid or has expired
-            print("The access token is invalid or has expired.\n\n")
 
-        # Make the HTTP GET request to the Spotify API
-        # response = sp.current_user_top_tracks(limit=50, offset=0, time_range="medium_term")
-        response = sp.current_user_saved_tracks(market="US", limit=20, offset=1)
-
-        # Extract the top tracks from the response
-        saved_tracks = response["items"]
-        tracks = parse_saved_tracks(saved_tracks, user)
-
-        # Return a JSON response containing the top tracks
-        return JsonResponse(tracks, safe=False)
-
+        # Optionally, return all Concert instances
+        print(Concert.objects.first())
+    
+        concerts = Concert.objects.all()
+        concerts_json = serialize('json', concerts)
+        parsed_data = json.loads(concerts_json)  # Parse the JSON string into a Python object
+        return JsonResponse(parsed_data, safe=False, json_dumps_params={'indent': 4})
     else:
-        error = "An error has occurred"
-        return error
-    
-def parse_saved_tracks(saved_tracks, user):
-    tracks = []
-    for track in saved_tracks:
-        for artist in track["track"]["artists"]:
-            track_info = {
-                "name": track["track"]["name"],
-                "artist": artist["name"],
-                "album": track["track"]["album"]["name"],
-            }
-            tracks.append(track_info)
-                
-            track_instance, created = Track.objects.get_or_create(
-                name=track_info["name"], 
-                artist=track_info["artist"], 
-                album=track_info["album"],
-                user=user
-            )
-
-            if created:
-                print(f'Added new track: {track_instance.name}')
-    return tracks
+        # Handle errors or unsuccessful responses
+        print("Failed to fetch concerts data")
+        return None

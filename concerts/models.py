@@ -1,19 +1,20 @@
 from django.db import models
 
-class User(models.Model):
-    username = models.CharField(max_length=255, primary_key=True)
-    display_name = models.CharField(max_length=255)
+class Concert(models.Model):
+    name = models.CharField(max_length=255, null=False, blank=False)
+    event_id = models.CharField(max_length=255, null=False, blank=False, unique=True)
+    url = models.URLField(max_length=255, blank=True)
+    image_url = models.URLField(max_length=255, null=False, blank=False)
+    local_date = models.DateField(null=False, blank=False)
+    local_time = models.TimeField(null=True, blank=True)
+    genre = models.CharField(max_length=255, blank=True)
+    subgenre = models.CharField(max_length=255, blank=True)
+    min_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    max_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    venue = models.CharField(max_length=255, blank=True)
+    city = models.CharField(max_length=255, null=False, blank=False)
+    state = models.CharField(max_length=255, null=False, blank=False)
 
-    def __str__(self):
-        return self.username
-    
-
-class Track(models.Model):
-    name = models.CharField(max_length=255)
-    artist = models.CharField(max_length=255)
-    album = models.CharField(max_length=255)
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
-    
-    def __str__(self):
-        return self.name
-    
+    class Meta:
+        # Adding timestamps
+        get_latest_by = 'local_date'
