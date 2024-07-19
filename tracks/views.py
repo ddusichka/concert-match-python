@@ -62,24 +62,72 @@ def get_top_tracks(request):
                 display_name=spotifyUser["display_name"] 
             )
         else:
-            # The access token is invalid or has expired
             print("The access token is invalid or has expired.\n\n")
 
-        # Make the HTTP GET request to the Spotify API
-        # response = sp.current_user_top_tracks(limit=50, offset=0, time_range="medium_term")
-        response = sp.current_user_saved_tracks(market="US", limit=20, offset=1)
-
-        # Extract the top tracks from the response
+        # Make the GET request to the Spotify API
+        response = sp.current_user_top_tracks(limit=50, offset=0, time_range="medium_term")
         saved_tracks = response["items"]
         tracks = parse_saved_tracks(saved_tracks, user)
 
-        # Return a JSON response containing the top tracks
         return JsonResponse(tracks, safe=False)
 
     else:
         error = "An error has occurred"
         return error
     
+@api_view(['GET'])
+def import_all_tracks(request):
+    if request.method == 'GET':
+         # Get the access token from the session and create a Spotipy client
+        access_token = request.session.get("access_token")
+        sp = spotipy.Spotify(auth=access_token)
+
+        # Make a request to the Spotify API to retrieve the user's profile information
+        spotifyUser = sp.me()
+        if spotifyUser is not None:
+            user, created = User.objects.get_or_create(
+                username=spotifyUser["id"], 
+                display_name=spotifyUser["display_name"] 
+            )
+        else:
+            print("The access token is invalid or has expired.\n\n")
+
+        # Make the GET request to the Spotify API
+        all_saved_tracks = []
+        limit = 50
+        offset = 0
+
+        while True:
+            response = sp.current_user_saved_tracks(market="US", limit=limit, offset=offset)
+            tracks = response['items']
+            if not tracks:
+                break  # Exit the loop if no more tracks are returned
+            all_saved_tracks.extend(tracks)
+            if len(tracks) < limit:
+                break  # Exit the loop if last page of tracks is fetched
+            offset += limit  # Prepare offset for the next iteration
+
+        delete_tracks_for_user(user.username)
+        tracks = parse_saved_tracks(all_saved_tracks, user)
+        
+        return JsonResponse(tracks, safe=False)
+
+    else:
+        error = "An error has occurred"
+        return error
+
+def delete_tracks_for_user(userId):
+    # First, ensure the user exists to avoid errors
+    try:
+        user = User.objects.get(pk=userId)
+    except User.DoesNotExist:
+        print("ERRORRRR")
+        return False  # Or handle the error as appropriate for your application
+
+    # Then, delete the tracks associated with this user
+    Track.objects.filter(user=user).delete()
+    return True  # Indicate success
+
 def parse_saved_tracks(saved_tracks, user):
     tracks = []
     for track in saved_tracks:
