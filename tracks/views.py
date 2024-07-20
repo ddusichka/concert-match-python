@@ -21,8 +21,6 @@ def login(request):
     # Redirect the user to the Spotify login page
     # Get the authorization URL
     url = sp_oauth.get_authorize_url()
-    # Print the authorization url to the console
-    print(url)
 
     # Redirect the user to the Spotify login page
     return HttpResponseRedirect(url)
@@ -66,10 +64,9 @@ def get_top_tracks(request):
 
         # Make the GET request to the Spotify API
         response = sp.current_user_top_tracks(limit=50, offset=0, time_range="medium_term")
-        saved_tracks = response["items"]
-        tracks = parse_saved_tracks(saved_tracks, user)
+        top_tracks = response["items"]
 
-        return JsonResponse(tracks, safe=False)
+        return JsonResponse(top_tracks, safe=False)
 
     else:
         error = "An error has occurred"
@@ -108,44 +105,33 @@ def import_all_tracks(request):
             offset += limit  # Prepare offset for the next iteration
 
         delete_tracks_for_user(user.username)
-        tracks = parse_saved_tracks(all_saved_tracks, user)
+        parse_saved_tracks(all_saved_tracks, user)
         
-        return JsonResponse(tracks, safe=False)
-
+        return JsonResponse(list(Track.objects.filter(user=user).values()), safe=False)
     else:
         error = "An error has occurred"
         return error
 
 def delete_tracks_for_user(userId):
-    # First, ensure the user exists to avoid errors
     try:
         user = User.objects.get(pk=userId)
     except User.DoesNotExist:
-        print("ERRORRRR")
-        return False  # Or handle the error as appropriate for your application
+        return False
 
-    # Then, delete the tracks associated with this user
     Track.objects.filter(user=user).delete()
     return True  # Indicate success
 
 def parse_saved_tracks(saved_tracks, user):
-    tracks = []
     for track in saved_tracks:
         for artist in track["track"]["artists"]:
-            track_info = {
-                "name": track["track"]["name"],
-                "artist": artist["name"],
-                "album": track["track"]["album"]["name"],
-            }
-            tracks.append(track_info)
-                
             track_instance, created = Track.objects.get_or_create(
-                name=track_info["name"], 
-                artist=track_info["artist"], 
-                album=track_info["album"],
+                name=track["track"]["name"], 
+                artist=artist["name"], 
+                album=track["track"]["album"]["name"],
+                image_url=track["track"]["album"]["images"][0]["url"],
+                added_at=track["added_at"],
                 user=user
             )
 
             if created:
                 print(f'Added new track: {track_instance.name}')
-    return tracks
