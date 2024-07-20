@@ -34,6 +34,7 @@ INSTALLED_APPS = [
     'concerts',
     'tracks',
     'matches',
+    'users',
     'corsheaders',
     'rest_framework',
     'django.contrib.admin',

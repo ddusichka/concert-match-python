@@ -1,3 +1,4 @@
+from django.utils import timezone
 from django.shortcuts import render, redirect
 from rest_framework.decorators import api_view
 from django.template.response import TemplateResponse
@@ -76,7 +77,17 @@ def get_top_tracks(request):
 def import_all_tracks(request):
     if request.method == 'GET':
          # Get the access token from the session and create a Spotipy client
-        access_token = request.session.get("access_token")
+        # access_token = request.session.get("access_token")
+            # Extract the token from the Authorization header
+        auth_header = request.headers.get('Authorization')
+        if auth_header and auth_header.startswith('Bearer '):
+            access_token = auth_header.split(' ')[1]
+        else:
+            access_token = None
+
+        if access_token is None:
+            return JsonResponse({'error': 'No access token provided'}, status=401)
+
         sp = spotipy.Spotify(auth=access_token)
 
         # Make a request to the Spotify API to retrieve the user's profile information
@@ -106,7 +117,8 @@ def import_all_tracks(request):
 
         delete_tracks_for_user(user.username)
         parse_saved_tracks(all_saved_tracks, user)
-        
+        User.objects.filter(username=spotifyUser["id"]).update(last_spotify_import=timezone.now())
+
         return JsonResponse(list(Track.objects.filter(user=user).values()), safe=False)
     else:
         error = "An error has occurred"
