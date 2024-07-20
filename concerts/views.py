@@ -1,10 +1,9 @@
 import requests
-from django.db.models import Q
-from django.http import JsonResponse
 import json
+from django.http import HttpResponse, JsonResponse
 from django.core.serializers import serialize
 
-from .models import Concert  # Adjust the import path as necessary
+from .models import Concert, Market
 import credentials
 
 """
@@ -63,6 +62,7 @@ def get_concerts(request):
                     'local_time': event.get('dates', {}).get('start', {}).get('localTime', None),                    
                     'genre': event['classifications'][0]['genre']['name'],
                     'subgenre': event['classifications'][0]['subGenre']['name'],
+                    'market_id': market_id,
                     'min_price': event.get('priceRanges', [{}])[0].get('min', None),
                     'max_price': event.get('priceRanges', [{}])[0].get('max', None),
                     'venue': event['_embedded']['venues'][0]['name'],
@@ -79,3 +79,12 @@ def get_concerts(request):
         # Handle errors or unsuccessful responses
         print("Failed to fetch concerts data")
         return None
+    
+def get_markets(request):
+    markets = Market.objects.all()
+    
+    # Serialize the queryset
+    data = [{"name": market.description, "id": market.pk} for market in markets]
+    
+    # Return an HttpResponse with the serialized data
+    return JsonResponse(data, safe=False)
