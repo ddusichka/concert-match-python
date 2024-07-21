@@ -3,6 +3,7 @@ from django.db import models
 class Concert(models.Model):
     name = models.CharField(max_length=255, null=False, blank=False)
     event_id = models.CharField(max_length=255, null=False, blank=False, unique=True)
+    description = models.TextField(blank=True)
     url = models.URLField(max_length=255, blank=True)
     image_url = models.URLField(max_length=255, null=False, blank=False)
     attraction_id = models.CharField(max_length=255, null=False, blank=False)

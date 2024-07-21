@@ -37,6 +37,8 @@ def fetch_concerts(request):
         params['endDateTime'] = body['endDateTime']
     if 'size' in body:
         params['size'] = body['size']
+    if 'page' in body:
+        params['page'] = body['page']
     market_id = body.get('marketId', 11)
     try:
         market = Market.objects.get(pk=market_id)
@@ -87,24 +89,33 @@ def find_unique_events(events):
     return unique_events
 
 def create_or_update_concert(event, market_id):
+    defaults={
+        'name': event['name'],
+        'url': event['url'],
+        'image_url': find_largest_image(event['images'])['url'],
+        'attraction_id': event['_embedded']['attractions'][0]['id'],
+        'attraction_name': event['_embedded']['attractions'][0]['name'],
+        'local_date': event['dates']['start']['localDate'],
+        'local_time': event.get('dates', {}).get('start', {}).get('localTime', None),                    
+        'genre': event['classifications'][0]['genre']['name'],
+        'subgenre': event['classifications'][0]['subGenre']['name'],
+        'market_id': market_id,
+        'min_price': event.get('priceRanges', [{}])[0].get('min', None),
+        'max_price': event.get('priceRanges', [{}])[0].get('max', None),
+        'venue': event['_embedded']['venues'][0]['name'],
+        'city': event['_embedded']['venues'][0]['city']['name'],
+        'state': event['_embedded']['venues'][0]['state']['stateCode'],
+    }
+    if 'description' in event:
+        defaults['description'] = event['description']
+    elif 'info' in event:
+        defaults['description'] = event['info']
+    elif 'pleaseNote' in event:
+        defaults['description'] = event['pleaseNote']
+        
     Concert.objects.update_or_create(
         event_id=event['id'],
-        defaults={
-            'name': event['name'],
-            'image_url': find_largest_image(event['images'])['url'],
-            'attraction_id': event['_embedded']['attractions'][0]['id'],
-            'attraction_name': event['_embedded']['attractions'][0]['name'],
-            'local_date': event['dates']['start']['localDate'],
-            'local_time': event.get('dates', {}).get('start', {}).get('localTime', None),                    
-            'genre': event['classifications'][0]['genre']['name'],
-            'subgenre': event['classifications'][0]['subGenre']['name'],
-            'market_id': market_id,
-            'min_price': event.get('priceRanges', [{}])[0].get('min', None),
-            'max_price': event.get('priceRanges', [{}])[0].get('max', None),
-            'venue': event['_embedded']['venues'][0]['name'],
-            'city': event['_embedded']['venues'][0]['city']['name'],
-            'state': event['_embedded']['venues'][0]['state']['stateCode'],
-        }
+        defaults=defaults
     )
 
 def find_largest_image(images):
