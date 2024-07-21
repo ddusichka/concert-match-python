@@ -1,5 +1,7 @@
 from django.utils import timezone
 from django.shortcuts import render, redirect
+from datetime import datetime
+
 from rest_framework.decorators import api_view
 from django.template.response import TemplateResponse
 from spotipy.oauth2 import SpotifyOAuth, SpotifyClientCredentials
@@ -141,9 +143,28 @@ def parse_saved_tracks(saved_tracks, user):
                 artist=artist["name"], 
                 album=track["track"]["album"]["name"],
                 image_url=track["track"]["album"]["images"][0]["url"],
+                release_date=convert_spotify_release_date(track),
                 added_at=track["added_at"],
                 user=user
             )
 
             if created:
                 print(f'Added new track: {track_instance.name}')
+
+def convert_spotify_release_date(track):
+    release_date=track["track"]["album"]["release_date"],
+    release_date_precision=track["track"]["album"]["release_date_precision"]
+
+    if isinstance(release_date, tuple):
+        release_date = release_date[0]
+
+    # Adjust the release_date based on the precision
+    if release_date_precision == "year":
+        adjusted_date = f"{release_date}-01-01"
+    elif release_date_precision == "month":
+        adjusted_date = f"{release_date}-01"
+    else:  # "day"
+        adjusted_date = release_date
+
+    adjusted_datetime_str = f"{adjusted_date} 00:00"
+    return datetime.strptime(adjusted_datetime_str, "%Y-%m-%d %H:%M")
