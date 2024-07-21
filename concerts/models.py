@@ -13,7 +13,7 @@ class Concert(models.Model):
     subgenre = models.CharField(max_length=255, blank=True)
     min_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     max_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    market_id = models.ForeignKey('Market', on_delete=models.CASCADE, null=True)
+    market = models.ForeignKey('Market', on_delete=models.CASCADE, null=True)
     venue = models.CharField(max_length=255, blank=True)
     city = models.CharField(max_length=255, null=False, blank=False)
     state = models.CharField(max_length=255, null=False, blank=False)

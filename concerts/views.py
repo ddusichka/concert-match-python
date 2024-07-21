@@ -1,6 +1,7 @@
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
 from django.views.decorators.csrf import csrf_exempt
+from django.utils import timezone
 from django.db import transaction
 import requests
 import json
@@ -14,22 +15,18 @@ Fetch concerts from the Ticketmaster API matching the given parameters and add t
 @csrf_exempt
 @require_POST
 def fetch_concerts(request):
-    try:
-        body = json.loads(request.body)
-    except json.JSONDecodeError:
-        return JsonResponse({'error': 'Invalid JSON'}, status=400)
-
-    try:
-        market_id = body.get('market_id', 11)
-        market = Market.objects.get(pk=market_id)
-    except Market.DoesNotExist:
-        return JsonResponse({'error': 'Market does not exist'}, status=404)
+    if request.body:
+        try:
+            body = json.loads(request.body)
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    else:
+        body = {}
 
     # Construct the URL and parameters
     params = {
         'apikey': credentials.TICKETMASTER_API_KEY,
         'countryCode': "US",
-        'marketId': market_id,
         'classificationName': "music",
         'size': 200,
         'sort': 'date,name,asc'
@@ -38,7 +35,14 @@ def fetch_concerts(request):
         params['startDateTime'] = body['startDateTime']
     if 'endDateTime' in body:
         params['endDateTime'] = body['endDateTime']
-
+    if 'size' in body:
+        params['size'] = body['size']
+    market_id = body.get('marketId', 11)
+    try:
+        market = Market.objects.get(pk=market_id)
+        params['marketId'] = market_id
+    except Market.DoesNotExist:
+        return JsonResponse({'error': 'Market does not exist'}, status=404)
 
     url = "https://app.ticketmaster.com/discovery/v2/events.json"
     response = requests.get(url, params=params)
@@ -49,16 +53,16 @@ def fetch_concerts(request):
         # Update or create concert instances
         with transaction.atomic():
             for event in unique_events:
-                create_or_update_concert(event, market)
+                create_or_update_concert(event, market_id)
     
-        concerts = Concert.objects.values().order_by('local_date')
-        return JsonResponse(list(concerts), safe=False)
+        return JsonResponse(list(unique_events), safe=False)
     else:
         print("Failed to fetch concerts data")
         return None
     
 def get_concerts(request):
-    concerts = Concert.objects.values().order_by('local_date')
+    today = timezone.now().date()
+    concerts = Concert.objects.filter(local_date__gte=today).values().order_by('local_date')
     return JsonResponse(list(concerts), safe=False)
  
 
@@ -82,7 +86,7 @@ def find_unique_events(events):
 
     return unique_events
 
-def create_or_update_concert(event, market):
+def create_or_update_concert(event, market_id):
     Concert.objects.update_or_create(
         event_id=event['id'],
         defaults={
@@ -94,7 +98,7 @@ def create_or_update_concert(event, market):
             'local_time': event.get('dates', {}).get('start', {}).get('localTime', None),                    
             'genre': event['classifications'][0]['genre']['name'],
             'subgenre': event['classifications'][0]['subGenre']['name'],
-            'market_id': market,
+            'market_id': market_id,
             'min_price': event.get('priceRanges', [{}])[0].get('min', None),
             'max_price': event.get('priceRanges', [{}])[0].get('max', None),
             'venue': event['_embedded']['venues'][0]['name'],
