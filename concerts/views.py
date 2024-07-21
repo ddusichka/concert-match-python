@@ -1,90 +1,107 @@
+from django.http import JsonResponse
+from django.views.decorators.http import require_POST
+from django.views.decorators.csrf import csrf_exempt
+from django.db import transaction
 import requests
 import json
-from django.http import HttpResponse, JsonResponse
-from django.core.serializers import serialize
 
 from .models import Concert, Market
 import credentials
 
 """
-Hit events endpoint and collect attraction IDs and artist names
+Fetch concerts from the Ticketmaster API matching the given parameters and add them to the concerts table.
 """
+@csrf_exempt
+@require_POST
+def fetch_concerts(request):
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
-def get_concerts(request):
-    # Define API parameters
-    api_key = credentials.TICKETMASTER_API_KEY
-    country_code = "US"
-    market_id = 11
-    classification_name = "music"
-    size = 200
+    try:
+        market_id = body.get('market_id', 11)
+        market = Market.objects.get(pk=market_id)
+    except Market.DoesNotExist:
+        return JsonResponse({'error': 'Market does not exist'}, status=404)
 
     # Construct the URL and parameters
     params = {
-        'countryCode': country_code,
-        'apikey': api_key,
+        'apikey': credentials.TICKETMASTER_API_KEY,
+        'countryCode': "US",
         'marketId': market_id,
-        'classificationName': classification_name,
-        'size': size,
+        'classificationName': "music",
+        'size': 200,
+        'sort': 'date,name,asc'
     }
-    url = "https://app.ticketmaster.com/discovery/v2/events.json"
+    if 'startDateTime' in body:
+        params['startDateTime'] = body['startDateTime']
+    if 'endDateTime' in body:
+        params['endDateTime'] = body['endDateTime']
 
-    # Make the API call
+
+    url = "https://app.ticketmaster.com/discovery/v2/events.json"
     response = requests.get(url, params=params)
     if response.status_code == 200:
         concerts_data = response.json()
+        unique_events = find_unique_events(concerts_data['_embedded']['events'])
 
-        # Process the 'events' array inside '_embedded'
-        events_array = concerts_data['_embedded']['events']
+        # Update or create concert instances
+        with transaction.atomic():
+            for event in unique_events:
+                create_or_update_concert(event, market)
+    
+        concerts = Concert.objects.values().order_by('local_date')
+        return JsonResponse(list(concerts), safe=False)
+    else:
+        print("Failed to fetch concerts data")
+        return None
+    
+def get_concerts(request):
+    concerts = Concert.objects.values().order_by('local_date')
+    return JsonResponse(list(concerts), safe=False)
+ 
 
-        # Sort and filter events as per the original JavaScript logic
-        # Note: Python's sorting is stable, so we can sort by name and then by length if needed directly
-        sorted_events = sorted(events_array, key=lambda x: (x['name'].lower(), len(x['name'])))
+def get_markets(request):
+    markets = Market.objects.values()
+    return JsonResponse(list(markets), safe=False)
 
-        # Assuming the uniqueness check is based on the first attraction's ID
-        unique_events = []
-        seen_ids = set()
-        for event in sorted_events:
+"""
+Filter out duplicate events (sometimes deluxe packages are shown as separate Events. we keep the one with the shorter name.)
+"""
+def find_unique_events(events):
+    sorted_events = sorted(events, key=lambda x: (x['name'].lower(), len(x['name'])))
+    unique_events = []
+    seen_ids = set()
+    for event in sorted_events:
+        if '_embedded' in event and 'attractions' in event['_embedded'] and len(event['_embedded']['attractions']) > 0:
             attraction_id = event['_embedded']['attractions'][0]['id']
             if attraction_id not in seen_ids:
                 unique_events.append(event)
                 seen_ids.add(attraction_id)
 
-        # Update or create concert instances
-        for event in unique_events:
-            Concert.objects.update_or_create(
-                event_id=event['id'],
-                defaults={
-                    'name': event['name'],
-                    'image_url': event['images'][0]['url'],
-                    'attraction_id': event['_embedded']['attractions'][0]['id'],
-                    'attraction_name': event['_embedded']['attractions'][0]['name'],
-                    'local_date': event['dates']['start']['localDate'],
-                    'local_time': event.get('dates', {}).get('start', {}).get('localTime', None),                    
-                    'genre': event['classifications'][0]['genre']['name'],
-                    'subgenre': event['classifications'][0]['subGenre']['name'],
-                    'market_id': market_id,
-                    'min_price': event.get('priceRanges', [{}])[0].get('min', None),
-                    'max_price': event.get('priceRanges', [{}])[0].get('max', None),
-                    'venue': event['_embedded']['venues'][0]['name'],
-                    'city': event['_embedded']['venues'][0]['city']['name'],
-                    'state': event['_embedded']['venues'][0]['state']['stateCode'],
-                }
-            )
-    
-        concerts = Concert.objects.all()
-        concerts_json = serialize('json', concerts)
-        parsed_data = json.loads(concerts_json)  # Parse the JSON string into a Python object
-        return JsonResponse(parsed_data, safe=False, json_dumps_params={'indent': 4})
-    else:
-        # Handle errors or unsuccessful responses
-        print("Failed to fetch concerts data")
-        return None
-    
-def get_markets(request):
-    markets = Market.objects.all()
-    
-    # Serialize the queryset
-    data = [{"name": market.description, "id": market.pk} for market in markets]
-    
-    # Return an HttpResponse with the serialized data
-    return JsonResponse(data, safe=False)
+    return unique_events
+
+def create_or_update_concert(event, market):
+    Concert.objects.update_or_create(
+        event_id=event['id'],
+        defaults={
+            'name': event['name'],
+            'image_url': find_largest_image(event['images'])['url'],
+            'attraction_id': event['_embedded']['attractions'][0]['id'],
+            'attraction_name': event['_embedded']['attractions'][0]['name'],
+            'local_date': event['dates']['start']['localDate'],
+            'local_time': event.get('dates', {}).get('start', {}).get('localTime', None),                    
+            'genre': event['classifications'][0]['genre']['name'],
+            'subgenre': event['classifications'][0]['subGenre']['name'],
+            'market_id': market,
+            'min_price': event.get('priceRanges', [{}])[0].get('min', None),
+            'max_price': event.get('priceRanges', [{}])[0].get('max', None),
+            'venue': event['_embedded']['venues'][0]['name'],
+            'city': event['_embedded']['venues'][0]['city']['name'],
+            'state': event['_embedded']['venues'][0]['state']['stateCode'],
+        }
+    )
+
+def find_largest_image(images):
+    return max(images, key=lambda image: image['width'] * image['height'], default=None)

@@ -30,7 +30,7 @@ def create_matches(request, user_id):
     return JsonResponse(parsed_data, safe=False, json_dumps_params={'indent': 4})
 
 def get_all_match_details(request, user_id):
-    matches = Match.objects.get(user_id=user_id)
+    matches = Match.objects.filter(user_id=user_id).order_by('concert__local_date')
     detailed_matches = []
 
     for match in matches:
@@ -40,12 +40,13 @@ def get_all_match_details(request, user_id):
         # Group tracks by album
         albums = {}
         for track in track_qs:
-            album_name = track.album  # Assuming 'album' is a field on Track model
+            album_name = track.album
             if album_name not in albums:
                 albums[album_name] = {
-                    "artist": track.artist,  # Assuming 'artist' is a field on Track model
-                    "image_url": track.image_url,  # Assuming 'image_url' is a field on Track model
-                    "tracks": []
+                    "artist": track.artist,
+                    "image_url": track.image_url,
+                    "tracks": [],
+                    "release_date": track.release_date
                 }
             albums[album_name]["tracks"].append(track)
 
@@ -57,6 +58,7 @@ def get_all_match_details(request, user_id):
                 "name": album_name,
                 "artist": details["artist"],
                 "image_url": details["image_url"],
+                "release_date": details["release_date"],
                 "tracks": serialized_tracks
             }
             albums_list.append(album_details)
