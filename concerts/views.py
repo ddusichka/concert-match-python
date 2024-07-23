@@ -52,15 +52,17 @@ def fetch_concerts(request):
         concerts_data = response.json()
         unique_events = find_unique_events(concerts_data['_embedded']['events'])
 
-        # Update or create concert instances
+        concerts_added = []
         with transaction.atomic():
             for event in unique_events:
-                create_or_update_concert(event, market_id)
+                concert, created = create_or_update_concert(event, market_id)
+                if created:
+                    concerts_added.append(concert)
     
-        return JsonResponse(list(unique_events), safe=False)
+        return JsonResponse([concert.attraction_name for concert in concerts_added], safe=False)
     else:
-        print("Failed to fetch concerts data")
-        return None
+        error_message = f"Failed to fetch concerts data: {response.text}"
+        raise Exception(error_message)
     
 def get_concerts(request):
     today = timezone.now().date()
@@ -112,8 +114,8 @@ def create_or_update_concert(event, market_id):
         defaults['description'] = event['info']
     elif 'pleaseNote' in event:
         defaults['description'] = event['pleaseNote']
-        
-    Concert.objects.update_or_create(
+
+    return Concert.objects.update_or_create(
         event_id=event['id'],
         defaults=defaults
     )
