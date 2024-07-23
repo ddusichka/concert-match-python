@@ -64,11 +64,15 @@ def get_all_match_details(request, user_id):
             }
             albums_list.append(album_details)
 
+        is_favorited = Favorite.objects.filter(user_id=user_id, match=match).exists()
+
+
         detailed_match = {
             'id': match.id,
             'concert': ConcertSerializer(concert_details).data,
             'artist_name': match.artist_name,
-            'albums': albums_list
+            'albums': albums_list,
+            'favorite': is_favorited
         }
         detailed_matches.append(detailed_match)
 
