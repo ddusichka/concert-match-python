@@ -91,6 +91,7 @@ def favorite_match(request, user_id, match_id):
         if created:
             return JsonResponse({'message': 'Match favorited successfully'}, status=201)
         else:
-            return JsonResponse({'message': 'Match already favorited'}, status=200)
+            favorite.delete()
+            return JsonResponse({'message': 'Match unfavorited successfully'}, status=200)
     except Http404 as e:
         return JsonResponse({'error': str(e)}, status=404)
