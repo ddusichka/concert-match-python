@@ -1,8 +1,9 @@
 
 import json
-from django.shortcuts import render
-from django.db.models import Q
-from django.http import JsonResponse
+from django.http import Http404, JsonResponse
+from django.shortcuts import get_object_or_404
+from django.views.decorators.http import require_POST
+from django.views.decorators.csrf import csrf_exempt
 from django.core.serializers import serialize
 from concerts.models import Concert
 from tracks.models import Track, User
@@ -79,12 +80,17 @@ def get_favorite_matches_for_user(request, user_id):
     parsed_data = json.loads(favorite_matches_json)  # Parse the JSON string into a Python object
     return JsonResponse(parsed_data, safe=False, json_dumps_params={'indent': 4})
 
+@csrf_exempt
+@require_POST
 def favorite_match(request, user_id, match_id):
-    match = Match.objects.get(id=match_id)
-    user = User.objects.get(id=user_id)
+    try:
+        match = get_object_or_404(Match, id=match_id)
+        user = get_object_or_404(User, username=user_id)
 
-    favorite, created = Favorite.objects.get_or_create(user=user, match=match)
-    if created:
-        return JsonResponse({'message': 'Match favorited successfully'}, status=201)
-    else:
-        return JsonResponse({'message': 'Match already favorited'}, status=200)
+        favorite, created = Favorite.objects.get_or_create(user=user, match=match)
+        if created:
+            return JsonResponse({'message': 'Match favorited successfully'}, status=201)
+        else:
+            return JsonResponse({'message': 'Match already favorited'}, status=200)
+    except Http404 as e:
+        return JsonResponse({'error': str(e)}, status=404)
